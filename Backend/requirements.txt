@@ -1,0 +1,10 @@
+speechrecognition==3.10.0
+pyttsx3==2.90
+langdetect==1.0.9
+APScheduler==3.10.4
+pygame==2.5.2
+# PyAudio often requires Microsoft C++ Build Tools on Windows to install directly.
+# Alternatively, download the pre-compiled .whl file for your Python version (e.g., cp311 for Python 3.11)
+# from https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio and install manually:
+# pip install C:\path\to\your\PyAudio-0.2.14-cp311-cp311-win_amd64.whl
+#pyaudio==0.2.14
