@@ -5,4 +5,3 @@ langdetect==1.0.9
 APScheduler==3.10.4
 pygame==2.5.2
 pyaudio==0.2.11
-tkinter
