@@ -14,20 +14,40 @@ from langdetect import detect
 import pygame
 import vosk
 import pyaudio
+import queue
+import logging
+
+logger = logging.getLogger(__name__)
 
 class VoiceCareAssistant:
     def __init__(self):
-        # Initialize components
-         # Get the directory where this script is located
+        def __init__(self):
+            self.tts_queue = queue.Queue()
+            self.tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
+            self.tts_thread.start()
+                # Initialize components
+        # Get the directory where this script is located
         base_dir = os.path.dirname(os.path.abspath(__file__))
 
         # Build model paths relative to this file
-        model_en_path = os.path.join(base_dir, "vosk", "vosk-model-small-en-us-0.15")
+        model_en_path = os.path.join(base_dir, "vosk", "vosk-model-en-in-0.5")
         model_hi_path = os.path.join(base_dir, "vosk", "vosk-model-small-hi-0.22")
-        self.vosk_model_en = vosk.Model(model_en_path)
-        self.vosk_model_hi = vosk.Model(model_hi_path)
-        self.vosk_rec_en = vosk.KaldiRecognizer(self.vosk_model_en, 16000)
-        self.vosk_rec_hi = vosk.KaldiRecognizer(self.vosk_model_hi, 16000)
+        
+        # Check if models exist before loading
+        if os.path.exists(model_en_path):
+            self.vosk_model_en = vosk.Model(model_en_path)
+            self.vosk_rec_en = vosk.KaldiRecognizer(self.vosk_model_en, 16000)
+        else:
+            self.vosk_model_en = None
+            self.vosk_rec_en = None
+            
+        if os.path.exists(model_hi_path):
+            self.vosk_model_hi = vosk.Model(model_hi_path)
+            self.vosk_rec_hi = vosk.KaldiRecognizer(self.vosk_model_hi, 16000)
+        else:
+            self.vosk_model_hi = None
+            self.vosk_rec_hi = None
+            
         self.recognizer = sr.Recognizer()
         self.microphone = sr.Microphone()
         self.tts_engine = pyttsx3.init()
@@ -36,6 +56,9 @@ class VoiceCareAssistant:
         
         # Initialize pygame for sound effects
         pygame.mixer.init()
+        
+        # Create a queue for thread-safe GUI updates
+        self.gui_queue = queue.Queue()
         
         # Database setup
         self.setup_database()
@@ -206,8 +229,27 @@ class VoiceCareAssistant:
         # Update reminders display
         self.update_reminders_display()
         
+        # Start GUI queue processing
+        self.process_gui_queue()
+        
         # Welcome message
         self.speak("VoiceCare is ready. How can I help you today?")
+    
+    def process_gui_queue(self):
+        """Process GUI updates from the queue (thread-safe)"""
+        try:
+            while True:
+                update_func = self.gui_queue.get_nowait()
+                update_func()
+        except queue.Empty:
+            pass
+        
+        # Schedule next check
+        self.root.after(100, self.process_gui_queue)
+    
+    def queue_gui_update(self, func):
+        """Queue a GUI update function for thread-safe execution"""
+        self.gui_queue.put(func)
     
     def calibrate_microphone(self):
         """Calibrate microphone for ambient noise"""
@@ -241,50 +283,82 @@ class VoiceCareAssistant:
     
     def start_listening(self):
         def listen_thread():
-            self.mic_button.config(state='disabled', bg='#e74c3c', text='LISTENING...')
-            self.status_label.config(text="Listening... Please speak now", fg='#e74c3c')
+            # Queue GUI updates instead of direct updates
+            self.queue_gui_update(lambda: self.mic_button.config(state='disabled', bg='#e74c3c', text='LISTENING...'))
+            self.queue_gui_update(lambda: self.status_label.config(text="Listening... Please speak now", fg='#e74c3c'))
+            
             self.play_sound("start")
+            
             try:
-                # Use PyAudio directly for Vosk
-                if hasattr(self, 'vosk_model_en'):
-                    model = self.vosk_model_en  # or self.vosk_model_hi for Hindi
+                # Try to use Vosk if available, otherwise fallback to speech_recognition
+                if self.vosk_model_en:
+                    result_text = self.listen_with_vosk()
                 else:
-                    self.status_label.config(text="Vosk model not loaded", fg='#e74c3c')
-                    return
-
-                rec = vosk.KaldiRecognizer(model, 16000)
-                p = pyaudio.PyAudio()
-                stream = p.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=8000)
-                stream.start_stream()
-                print("Say something...")
-
-                result_text = ""
-                start_time = time.time()
-                while True:
-                    data = stream.read(4000, exception_on_overflow=False)
-                    if rec.AcceptWaveform(data):
-                        result = json.loads(rec.Result())
-                        print("Vosk result:", result)
-                        result_text = result.get('text', '')
-                        break
-                    elif time.time() - start_time > 8:  # 8 seconds timeout
-                        break
-                stream.stop_stream()
-                stream.close()
-                p.terminate()
-
+                    result_text = self.listen_with_sr()
+                
                 self.play_sound("end")
-                self.process_voice_command(result_text)
+                
+                if result_text:
+                    self.process_voice_command(result_text)
+                else:
+                    self.queue_gui_update(lambda: self.status_label.config(text="Could not understand. Try again.", fg='#e74c3c'))
+                    self.speak("Sorry, I didn't catch that. Please try again.")
 
             except Exception as e:
-                self.status_label.config(text=f"Error: {str(e)}", fg='#e74c3c')
+                error_msg = f"Error: {str(e)}"
+                self.queue_gui_update(lambda: self.status_label.config(text=error_msg, fg='#e74c3c'))
                 self.speak("There was an error. Please try again.")
             finally:
-                self.mic_button.config(state='normal', bg='#3498db', text='SPEAK')
-                if self.status_label.cget('text') != "Could not understand. Try again.":
-                    self.status_label.config(text="Ready to help you!", fg='#27ae60')
+                self.queue_gui_update(lambda: self.mic_button.config(state='normal', bg='#3498db', text='SPEAK'))
+                
         threading.Thread(target=listen_thread, daemon=True).start()
     
+    def listen_with_vosk(self):
+        """Listen using Vosk (offline recognition)"""
+        try:
+            model = self.vosk_model_en
+            rec = vosk.KaldiRecognizer(model, 16000)
+            p = pyaudio.PyAudio()
+            stream = p.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=8000)
+            stream.start_stream()
+
+            result_text = ""
+            start_time = time.time()
+            while True:
+                data = stream.read(4000, exception_on_overflow=False)
+                if rec.AcceptWaveform(data):
+                    result = json.loads(rec.Result())
+                    result_text = result.get('text', '')
+                    break
+                elif time.time() - start_time > 8:  # 8 seconds timeout
+                    break
+                    
+            stream.stop_stream()
+            stream.close()
+            p.terminate()
+            
+            return result_text
+        except Exception as e:
+            print(f"Vosk recognition error: {e}")
+            return None
+    
+    def listen_with_sr(self):
+        """Listen using speech_recognition library"""
+        try:
+            with self.microphone as source:
+                audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=10)
+            
+            try:
+                text = self.recognizer.recognize_google(audio)
+                return text
+            except sr.UnknownValueError:
+                return None
+            except sr.RequestError as e:
+                print(f"Speech recognition error: {e}")
+                return None
+        except Exception as e:
+            print(f"Microphone error: {e}")
+            return None
     
     def detect_language(self, text):
         """Detect language of the input text"""
@@ -297,19 +371,21 @@ class VoiceCareAssistant:
         except:
             return 'en'  # Default to English
     
+    def words_to_numbers(self, text):
+        """Convert word numbers to digits"""
+        word_to_num = {
+            'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+            'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
+            'ten': '10', 'eleven': '11', 'twelve': '12'
+        }
+        for word, num in word_to_num.items():
+            text = re.sub(r'\b' + word + r'\b', num, text)
+        return text
+    
     def process_voice_command(self, text):
-        def words_to_numbers(text):
-            word_to_num = {
-                'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
-                'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
-                'ten': '10', 'eleven': '11', 'twelve': '12'
-            }
-            for word, num in word_to_num.items():
-                text = re.sub(r'\b' + word + r'\b', num, text)
-            return text
         """Process the recognized voice command"""
         text = text.lower().strip()
-        text = words_to_numbers(text)  # <-- Add this line
+        text = self.words_to_numbers(text)
         language = self.detect_language(text)
         print(f"Recognized: {text} (Language: {language})")
         
@@ -328,7 +404,7 @@ class VoiceCareAssistant:
         
         # Fallback - not understood
         response = self.patterns[language]['responses']['not_understood']
-        self.status_label.config(text="Command not recognized", fg='#e74c3c')
+        self.queue_gui_update(lambda: self.status_label.config(text="Command not recognized", fg='#e74c3c'))
         self.speak(response, language)
     
     def handle_set_reminder(self, match, text, language):
@@ -338,13 +414,13 @@ class VoiceCareAssistant:
             
             if language == 'hi':
                 # Different pattern for Hindi
-                if 'рд╡рд╛рдЬрддрд╛' in text:
-                    parts = text.split('рд╡рд╛рдЬрддрд╛')
+                if 'बजे' in text:
+                    parts = text.split('बजे')
                     time_part = parts[0].strip().split()[-1]
                     
                     # Check for recurring pattern in the Hindi text
-                    if 'рджрд┐рд╡рд╕ рд╕рд╛рдареА' in text:
-                        recurring_match = re.search(r'(\d+)\s+рджрд┐рд╡рд╕ рд╕рд╛рдареА', text)
+                    if 'दिन साठी' in text:
+                        recurring_match = re.search(r'(\d+)\s+दिन साठी', text)
                         if recurring_match:
                             recurring_days = int(recurring_match.group(1))
                             print(f"Recurring days detected: {recurring_days}")
@@ -460,7 +536,7 @@ class VoiceCareAssistant:
                 # Respond to user with recurring reminder message
                 response = self.patterns[language]['responses']['reminder_set_recurring'].format(
                     time=reminder_time.strftime('%I:%M %p'), task=task_part, days=recurring_days)
-                self.status_label.config(text="Recurring reminder set successfully!", fg='#27ae60')
+                self.queue_gui_update(lambda: self.status_label.config(text="Recurring reminder set successfully!", fg='#27ae60'))
                 
             else:
                 # Regular single reminder
@@ -484,16 +560,16 @@ class VoiceCareAssistant:
                 # Respond to user with single reminder message
                 response = self.patterns[language]['responses']['reminder_set'].format(
                     time=reminder_time.strftime('%I:%M %p'), task=task_part)
-                self.status_label.config(text="Reminder set successfully!", fg='#27ae60')
+                self.queue_gui_update(lambda: self.status_label.config(text="Reminder set successfully!", fg='#27ae60'))
             
             self.speak(response, language)
             
             # Update display
-            self.update_reminders_display()
+            self.queue_gui_update(self.update_reminders_display)
             
         except Exception as e:
             print(f"Error setting reminder: {e}")
-            self.status_label.config(text="Error setting reminder", fg='#e74c3c')
+            self.queue_gui_update(lambda: self.status_label.config(text="Error setting reminder", fg='#e74c3c'))
             self.speak("Sorry, I couldn't set that reminder. Please try again.", language)
     
     def handle_query_schedule(self, language):
@@ -529,7 +605,7 @@ class VoiceCareAssistant:
                     count=len(reminders), reminders=reminders_text)
                 self.speak(response, language)
             
-            self.status_label.config(text="Schedule retrieved", fg='#27ae60')
+            self.queue_gui_update(lambda: self.status_label.config(text="Schedule retrieved", fg='#27ae60'))
             
         except Exception as e:
             print(f"Error querying schedule: {e}")
@@ -540,13 +616,16 @@ class VoiceCareAssistant:
         response = self.patterns[language]['responses']['reminder_triggered'].format(task=task)
         self.speak(response, language)
         
-        # Update GUI to highlight the reminder
-        self.status_label.config(text=f"REMINDER: {task}", fg='#e74c3c')
-        self.root.bell()  # System bell sound
+        # Update GUI to highlight the reminder (thread-safe)
+        def update_gui():
+            self.status_label.config(text=f"REMINDER: {task}", fg='#e74c3c')
+            self.root.bell()  # System bell sound
+            
+            # Flash the window to get attention
+            self.root.attributes('-topmost', True)
+            self.root.after(3000, lambda: self.root.attributes('-topmost', False))
         
-        # Flash the window to get attention
-        self.root.attributes('-topmost', True)
-        self.root.after(3000, lambda: self.root.attributes('-topmost', False))
+        self.queue_gui_update(update_gui)
         
         # Update reminder status in database
         if reminder_id is not None:
@@ -558,13 +637,12 @@ class VoiceCareAssistant:
                 self.conn.commit()
                 
                 # Update the display
-                self.update_reminders_display()
+                self.queue_gui_update(self.update_reminders_display)
                 
             except Exception as e:
                 print(f"Error updating reminder status: {e}")
     
     def update_reminders_display(self):
-        """Update the reminders display in the GUI"""
         try:
             today = datetime.date.today().strftime('%Y-%m-%d')
             cursor = self.conn.cursor()
@@ -590,88 +668,216 @@ class VoiceCareAssistant:
                     if is_recurring and remaining_days > 0:
                         recurring_text = f" (Repeats for {remaining_days} more days)"
                     
-                    self.reminders_text.insert(tk.END, f"{i}. {task} - {formatted_time}{recurring_text}\n")
+                    # Correct string formatting
+                    self.reminders_text.insert(tk.END, f"{i}. {task} at {formatted_time}{recurring_text}\n")
         
         except Exception as e:
             print(f"Error updating display: {e}")
+            self.reminders_text.delete(1.0, tk.END)
+            self.reminders_text.insert(tk.END, "Error loading reminders.")
     
     def repeat_reminders(self):
-        """Repeat today's reminders aloud"""
-        self.handle_query_schedule('en')
+        """Repeat today's reminders audibly"""
+        def repeat_thread():
+            try:
+                today = datetime.date.today().strftime('%Y-%m-%d')
+                cursor = self.conn.cursor()
+                cursor.execute('''
+                    SELECT task, time FROM reminders 
+                    WHERE date = ? AND active = 1 
+                    ORDER BY time
+                ''', (today,))
+                
+                reminders = cursor.fetchall()
+                
+                if not reminders:
+                    self.speak("You have no reminders for today.")
+                    self.queue_gui_update(lambda: self.status_label.config(text="No reminders to repeat", fg='#f39c12'))
+                else:
+                    self.speak(f"You have {len(reminders)} reminders today.")
+                    time.sleep(1)  # Brief pause
+                    
+                    for i, (task, time_str) in enumerate(reminders, 1):
+                        time_obj = datetime.datetime.strptime(time_str, '%H:%M').time()
+                        formatted_time = time_obj.strftime('%I:%M %p')
+                        self.speak(f"Reminder {i}: {task} at {formatted_time}")
+                        time.sleep(0.5)  # Brief pause between reminders
+                    
+                    self.queue_gui_update(lambda: self.status_label.config(text="Reminders repeated", fg='#27ae60'))
+                    
+            except Exception as e:
+                print(f"Error repeating reminders: {e}")
+                self.speak("Sorry, I couldn't repeat your reminders.")
+                self.queue_gui_update(lambda: self.status_label.config(text="Error repeating reminders", fg='#e74c3c'))
+        
+        threading.Thread(target=repeat_thread, daemon=True).start()
     
     def clear_all_reminders(self):
-        """Clear all reminders for today"""
+        """Clear all active reminders for today"""
         try:
             today = datetime.date.today().strftime('%Y-%m-%d')
             cursor = self.conn.cursor()
-            cursor.execute('UPDATE reminders SET active = 0 WHERE date = ?', (today,))
-            self.conn.commit()
             
-            self.update_reminders_display()
-            self.status_label.config(text="All reminders cleared", fg='#f39c12')
-            self.speak("All reminders for today have been cleared.")
+            # Get reminders to be cleared for feedback
+            cursor.execute('''
+                SELECT COUNT(*) FROM reminders 
+                WHERE date = ? AND active = 1
+            ''', (today,))
+            count = cursor.fetchone()[0]
             
+            if count > 0:
+                # Mark reminders as inactive
+                cursor.execute('''
+                    UPDATE reminders SET active = 0 
+                    WHERE date = ? AND active = 1
+                ''', (today,))
+                self.conn.commit()
+                
+                # Cancel scheduled jobs
+                cursor.execute('''
+                    SELECT id FROM reminders 
+                    WHERE date = ? AND active = 0
+                ''', (today,))
+                reminder_ids = cursor.fetchall()
+                
+                for (reminder_id,) in reminder_ids:
+                    try:
+                        self.scheduler.remove_job(f"reminder_{reminder_id}")
+                    except:
+                        pass  # Job might not exist
+                
+                self.update_reminders_display()
+                self.status_label.config(text=f"Cleared {count} reminders", fg='#e67e22')
+                self.speak(f"Cleared {count} reminders for today.")
+            else:
+                self.status_label.config(text="No reminders to clear", fg='#f39c12')
+                self.speak("No reminders to clear.")
+                
         except Exception as e:
             print(f"Error clearing reminders: {e}")
+            self.status_label.config(text="Error clearing reminders", fg='#e74c3c')
+            self.speak("Sorry, I couldn't clear your reminders.")
     
     def load_existing_reminders(self):
         """Load and reschedule existing reminders from database"""
         try:
-            today = datetime.date.today().strftime('%Y-%m-%d')
             cursor = self.conn.cursor()
             cursor.execute('''
-                SELECT id, task, time, language, recurring, remaining_days FROM reminders 
-                WHERE date = ? AND active = 1
-            ''', (today,))
+                SELECT id, task, time, date, language, recurring, remaining_days FROM reminders 
+                WHERE active = 1
+            ''', )
             
             reminders = cursor.fetchall()
+            current_time = datetime.datetime.now()
             
-            for reminder_id, task, time_str, language, is_recurring, remaining_days in reminders:
-                time_obj = datetime.datetime.strptime(time_str, '%H:%M').time()
-                reminder_datetime = datetime.datetime.combine(datetime.date.today(), time_obj)
-                
-                # Only schedule if the time hasn't passed
-                if reminder_datetime > datetime.datetime.now():
-                    self.scheduler.add_job(
-                        func=self.trigger_reminder,
-                        trigger="date",
-                        run_date=reminder_datetime,
-                        args=[task, language or 'en', reminder_id, bool(is_recurring)],
-                        id=f"reminder_{reminder_id}"
-                    )
-                    print(f"Loaded reminder: {task} at {time_str} (Recurring: {bool(is_recurring)}, Days left: {remaining_days})")
-        
+            for reminder_id, task, time_str, date_str, language, is_recurring, remaining_days in reminders:
+                try:
+                    # Parse reminder datetime
+                    reminder_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+                    reminder_time = datetime.datetime.strptime(time_str, '%H:%M').time()
+                    reminder_datetime = datetime.datetime.combine(reminder_date, reminder_time)
+                    
+                    # Only reschedule future reminders
+                    if reminder_datetime > current_time:
+                        self.scheduler.add_job(
+                            func=self.trigger_reminder,
+                            trigger="date",
+                            run_date=reminder_datetime,
+                            args=[task, language, reminder_id, is_recurring],
+                            id=f"reminder_{reminder_id}"
+                        )
+                        print(f"Rescheduled reminder {reminder_id}: {task} at {reminder_datetime}")
+                    else:
+                        # Mark past reminders as inactive
+                        cursor.execute('UPDATE reminders SET active = 0 WHERE id = ?', (reminder_id,))
+                        
+                except Exception as e:
+                    print(f"Error rescheduling reminder {reminder_id}: {e}")
+                    continue
+            
+            self.conn.commit()
+            print(f"Loaded {len(reminders)} existing reminders")
+            
         except Exception as e:
             print(f"Error loading existing reminders: {e}")
+    
+    def cleanup_old_reminders(self):
+        """Clean up old inactive reminders (run periodically)"""
+        try:
+            # Remove reminders older than 7 days
+            cutoff_date = (datetime.date.today() - datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                DELETE FROM reminders 
+                WHERE date < ? AND active = 0
+            ''', (cutoff_date,))
+            self.conn.commit()
+            
+            deleted_count = cursor.rowcount
+            if deleted_count > 0:
+                print(f"Cleaned up {deleted_count} old reminders")
+                
+        except Exception as e:
+            print(f"Error cleaning up old reminders: {e}")
+    
+    def on_closing(self):
+        """Handle application shutdown"""
+        try:
+            # Stop the scheduler
+            if hasattr(self, 'scheduler') and self.scheduler.running:
+                self.scheduler.shutdown()
+            
+            # Close database connection
+            if hasattr(self, 'conn'):
+                self.conn.close()
+            
+            # Clean up pygame
+            try:
+                pygame.mixer.quit()
+            except:
+                pass
+            
+            print("VoiceCare Assistant shutting down...")
+            
+        except Exception as e:
+            print(f"Error during shutdown: {e}")
+        finally:
+            self.root.destroy()
     
     def run(self):
         """Start the application"""
         try:
+            # Set up window close handler
             self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+            
+            # Schedule periodic cleanup (daily at midnight)
+            self.scheduler.add_job(
+                func=self.cleanup_old_reminders,
+                trigger="cron",
+                hour=0,
+                minute=0,
+                id="cleanup_job"
+            )
+            
+            # Start the GUI main loop
+            print("Starting VoiceCare Assistant...")
             self.root.mainloop()
+            
         except KeyboardInterrupt:
+            print("Application interrupted by user")
             self.on_closing()
-    
-    def on_closing(self):
-        """Clean up when closing the application"""
-        try:
-            self.scheduler.shutdown()
-            self.conn.close()
-        except:
-            pass
-        self.root.quit()
+        except Exception as e:
+            print(f"Critical error in main loop: {e}")
+            self.on_closing()
 
-if __name__ == "__main__":
-    # Install required packages note
-    print("VoiceCare Assistant Starting...")
-    print("Required packages: pip install speechrecognition pyttsx3 langdetect apscheduler pygame")
-    
+def main():
+    """Main entry point"""
     try:
         app = VoiceCareAssistant()
         app.run()
-    except ImportError as e:
-        print(f"Missing dependency: {e}")
-        print("Please install required packages:")
-        print("pip install speechrecognition pyttsx3 langdetect apscheduler pygame")
     except Exception as e:
-        print(f"Error starting application: {e}")
+        print(f"Failed to start VoiceCare Assistant: {e}")
+        input("Press Enter to exit...")
+
+if __name__ == "__main__":
+    main()
