@@ -122,7 +122,7 @@ VoiceCare supports three different speech recognition models to balance accuracy
 
 ### Step 1: Clone the Repository
 ```bash
-git clone <your-github-repo-url>
+git clone <https://github.com/AvdhutRokade/VoiceCare>
 cd VoiceCare
 ```
 
@@ -166,16 +166,24 @@ python voiceCare_frontend.py
 
 ```
 VoiceCare/
-├── voiceCare_frontend.py    # Main UI application
-├── voicecare_final.py       # Backend processing
-├── model/                   # Vosk model directory
-│   └── vosk-model-en-in-0.5/
-├── requirements.txt         # Python dependencies
-├── README.md               # This file
-└── assets/                 # UI assets and icons
+├── requirements.txt                    # Python dependencies and packages
+├── voicecare_reminders.db             # SQLite database for storing reminders
+├── Bigger Model/                      # Implementation using Vosk large model
+│   ├── voicecare_final.py            #   Backend processing with big model
+│   └── voicecare_frontend.py         #   PyQt5 user interface
+├── GoogleSpeech recognition/          # Implementation using Google Speech API
+│   ├── voiceCare_frontend.py         #   PyQt5 user interface for Google API
+│   ├── VoiceCare_google.py           #   Backend with Google Speech integration
+│   └── voicecare_reminders.db        #   Database for Google Speech version
+├── Small Model/                       # Implementation using Vosk small model
+│   ├── voicecare_final.py            #   Backend processing with small model
+│   └── voicecare_frontend.py         #   PyQt5 user interface
+├── vosk/                             # Vosk library files and dependencies
+├── vosk-model-small-en-us-0.15/      # English (US) speech recognition model
+└── vosk-model-small-hi-0.22/         # Hindi speech recognition model
 ```
 
-## 🔧 Configuration
+##  Configuration
 
 The application automatically detects and configures the available speech recognition models. You can modify the model selection in `voicecare_final.py` based on your requirements:
 
@@ -183,7 +191,7 @@ The application automatically detects and configures the available speech recogn
 - For offline high accuracy: Use Big Model
 - For resource efficiency: Use Small Model
 
-## 🎯 Target Audience
+##  Target Audience
 
 VoiceCare is specifically designed for:
 - Elderly individuals with memory challenges
