@@ -16,6 +16,7 @@ class ModifiedVoiceCareAssistant(VoiceCareAssistant):
     
     def __init__(self):
         # Initialize components without GUI
+        super().__init__()
         import queue
         self.tts_queue = queue.Queue()
         self.tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
@@ -54,6 +55,38 @@ class ModifiedVoiceCareAssistant(VoiceCareAssistant):
     def setup_gui(self):
         """Skip GUI setup since we're using PyQt5"""
         pass
+    def queue_gui_update(self, func):
+        # Do nothing, or optionally call func() directly if safe
+        pass
+
+    def update_reminders_display(self):
+        pass
+
+    def process_gui_queue(self):
+        pass
+
+    def on_closing(self):
+        # Only clean up non-GUI resources
+        try:
+            self.tts_queue.put((None, None))
+            if self.scheduler.running:
+                self.scheduler.shutdown()
+            if hasattr(self, 'conn'):
+                self.conn.close()
+            # pygame.mixer.quit()
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+
+    def cleanup(self):
+        # Only clean up non-GUI resources
+        try:
+            if hasattr(self, 'scheduler') and self.scheduler.running:
+                self.scheduler.shutdown()
+            if hasattr(self, 'conn'):
+                self.conn.close()
+            # pygame.mixer.quit()
+        except Exception as e:
+            print(f"Cleanup error: {e}")
 
 
 class ReminderCard(QFrame):
