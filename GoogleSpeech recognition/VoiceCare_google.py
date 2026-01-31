@@ -1,8 +1,6 @@
 import sqlite3
 import speech_recognition as sr
 import pyttsx3
-import tkinter as tk
-from tkinter import ttk, font
 import threading
 import datetime
 import re
@@ -44,9 +42,6 @@ class VoiceCareAssistant:
         
         # Configure TTS
         self.setup_tts()
-        
-        # GUI setup
-        self.setup_gui()
         
         # Calibrate microphone
         self.calibrate_microphone()
@@ -145,100 +140,8 @@ class VoiceCareAssistant:
         self.tts_engine.setProperty('rate', 150)  # Slower speech rate
         self.tts_engine.setProperty('volume', 0.9)
     
-    def setup_gui(self):
-        """Create the main GUI interface"""
-        self.root = tk.Tk()
-        self.root.title("VoiceCare Assistant")
-        self.root.geometry("600x500")
-        self.root.configure(bg='#f0f8ff')
-        
-        # Configure fonts for elderly users
-        self.large_font = font.Font(family="Arial", size=18, weight="bold")
-        self.medium_font = font.Font(family="Arial", size=14)
-        self.button_font = font.Font(family="Arial", size=16, weight="bold")
-        
-        # Main frame
-        main_frame = tk.Frame(self.root, bg='#f0f8ff')
-        main_frame.pack(expand=True, fill='both', padx=20, pady=20)
-        
-        # Title
-        title_label = tk.Label(main_frame, text="VoiceCare Assistant", 
-                              font=font.Font(family="Arial", size=24, weight="bold"),
-                              bg='#f0f8ff', fg='#2c3e50')
-        title_label.pack(pady=20)
-        
-        # Status display
-        self.status_label = tk.Label(main_frame, text="Ready to help you!", 
-                                   font=self.large_font, bg='#f0f8ff', fg='#27ae60')
-        self.status_label.pack(pady=10)
-        
-        # Big microphone button
-        self.mic_button = tk.Button(main_frame, text="SPEAK", 
-                                   font=font.Font(family="Arial", size=20, weight="bold"),
-                                   bg='#3498db', fg='white', activebackground='#2980b9',
-                                   width=15, height=3, command=self.start_listening,
-                                   relief='raised', bd=5)
-        self.mic_button.pack(pady=30)
-        
-        # Instructions
-        instructions = tk.Label(main_frame, 
-                        text="Press the SPEAK button and say:\n" +
-                        "- 'Remind me to take medicine at 6 PM'\n" +
-                        "- 'What are my reminders today?'\n" +
-                        "- 'Remind me to take medicine at 8 PM for 5 days'",
-                        font=self.medium_font, bg='#f0f8ff', fg='#34495e',
-                        justify='left')
-        instructions.pack(pady=20)
-        
-        # Reminders display
-        self.reminders_frame = tk.Frame(main_frame, bg='#ecf0f1', relief='sunken', bd=2)
-        self.reminders_frame.pack(fill='both', expand=True, pady=10)
-        
-        tk.Label(self.reminders_frame, text="Today's Reminders:", 
-                font=self.medium_font, bg='#ecf0f1', fg='#2c3e50').pack(pady=5)
-        
-        self.reminders_text = tk.Text(self.reminders_frame, font=self.medium_font,
-                                     height=6, wrap='word', bg='white')
-        self.reminders_text.pack(fill='both', expand=True, padx=10, pady=5)
-        
-        # Control buttons
-        button_frame = tk.Frame(main_frame, bg='#f0f8ff')
-        button_frame.pack(pady=10)
-        
-        self.repeat_button = tk.Button(button_frame, text="Repeat Reminders", 
-                                      font=self.button_font, bg='#e67e22', fg='white',
-                                      command=self.repeat_reminders, width=15)
-        self.repeat_button.pack(side='left', padx=5)
-        
-        self.clear_button = tk.Button(button_frame, text="Clear All", 
-                                     font=self.button_font, bg='#e74c3c', fg='white',
-                                     command=self.clear_all_reminders, width=10)
-        self.clear_button.pack(side='left', padx=5)
-        
-        # Update reminders display
-        self.update_reminders_display()
-        
-        # Start GUI queue processing
-        self.process_gui_queue()
-        
-        # Welcome message
-        self.speak("VoiceCare is ready. How can I help you today?")
-    
-    def process_gui_queue(self):
-        """Process GUI updates from the queue (thread-safe)"""
-        try:
-            while True:
-                update_func = self.gui_queue.get_nowait()
-                update_func()
-        except queue.Empty:
-            pass
-        
-        # Schedule next check
-        self.root.after(100, self.process_gui_queue)
-    
-    def queue_gui_update(self, func):
-        """Queue a GUI update function for thread-safe execution"""
-        self.gui_queue.put(func)
+
+
     
     def calibrate_microphone(self):
         """Calibrate microphone for ambient noise"""
@@ -265,9 +168,6 @@ class VoiceCareAssistant:
     
     def start_listening(self):
         def listen_thread():
-            # Queue GUI updates instead of direct updates
-            self.queue_gui_update(lambda: self.mic_button.config(state='disabled', bg='#e74c3c', text='LISTENING...'))
-            self.queue_gui_update(lambda: self.status_label.config(text="Listening... Please speak now", fg='#e74c3c'))
             
             self.play_sound("start")
             
@@ -280,15 +180,11 @@ class VoiceCareAssistant:
                 if result_text:
                     self.process_voice_command(result_text)
                 else:
-                    self.queue_gui_update(lambda: self.status_label.config(text="Could not understand. Try again.", fg='#e74c3c'))
                     self.speak("Sorry, I didn't catch that. Please try again.")
 
             except Exception as e:
                 error_msg = f"Error: {str(e)}"
-                self.queue_gui_update(lambda: self.status_label.config(text=error_msg, fg='#e74c3c'))
                 self.speak("There was an error. Please try again.")
-            finally:
-                self.queue_gui_update(lambda: self.mic_button.config(state='normal', bg='#3498db', text='SPEAK'))
                 
         threading.Thread(target=listen_thread, daemon=True).start()
     
@@ -365,7 +261,6 @@ class VoiceCareAssistant:
         
         # Fallback - not understood
         response = self.patterns[language]['responses']['not_understood']
-        self.queue_gui_update(lambda: self.status_label.config(text="Command not recognized", fg='#e74c3c'))
         self.speak(response, language)
     
     def handle_set_reminder(self, match, text, language):
@@ -497,7 +392,6 @@ class VoiceCareAssistant:
                 # Respond to user with recurring reminder message
                 response = self.patterns[language]['responses']['reminder_set_recurring'].format(
                     time=reminder_time.strftime('%I:%M %p'), task=task_part, days=recurring_days)
-                self.queue_gui_update(lambda: self.status_label.config(text="Recurring reminder set successfully!", fg='#27ae60'))
                 
             else:
                 # Regular single reminder
@@ -521,16 +415,11 @@ class VoiceCareAssistant:
                 # Respond to user with single reminder message
                 response = self.patterns[language]['responses']['reminder_set'].format(
                     time=reminder_time.strftime('%I:%M %p'), task=task_part)
-                self.queue_gui_update(lambda: self.status_label.config(text="Reminder set successfully!", fg='#27ae60'))
             
             self.speak(response, language)
             
-            # Update display
-            self.queue_gui_update(self.update_reminders_display)
-            
         except Exception as e:
             print(f"Error setting reminder: {e}")
-            self.queue_gui_update(lambda: self.status_label.config(text="Error setting reminder", fg='#e74c3c'))
             self.speak("Sorry, I couldn't set that reminder. Please try again.", language)
     
     def handle_query_schedule(self, language):
@@ -566,8 +455,6 @@ class VoiceCareAssistant:
                     count=len(reminders), reminders=reminders_text)
                 self.speak(response, language)
             
-            self.queue_gui_update(lambda: self.status_label.config(text="Schedule retrieved", fg='#27ae60'))
-            
         except Exception as e:
             print(f"Error querying schedule: {e}")
             self.speak("Sorry, I couldn't get your schedule right now.", language)
@@ -576,17 +463,6 @@ class VoiceCareAssistant:
         """Trigger a reminder at the scheduled time"""
         response = self.patterns[language]['responses']['reminder_triggered'].format(task=task)
         self.speak(response, language)
-        
-        # Update GUI to highlight the reminder (thread-safe)
-        def update_gui():
-            self.status_label.config(text=f"REMINDER: {task}", fg='#e74c3c')
-            self.root.bell()  # System bell sound
-            
-            # Flash the window to get attention
-            self.root.attributes('-topmost', True)
-            self.root.after(3000, lambda: self.root.attributes('-topmost', False))
-        
-        self.queue_gui_update(update_gui)
         
         # Update reminder status in database
         if reminder_id is not None:
@@ -597,8 +473,7 @@ class VoiceCareAssistant:
                 cursor.execute('UPDATE reminders SET active = 0 WHERE id = ?', (reminder_id,))
                 self.conn.commit()
                 
-                # Update the display
-                self.queue_gui_update(self.update_reminders_display)
+
                 
             except Exception as e:
                 print(f"Error updating reminder status: {e}")
@@ -615,27 +490,18 @@ class VoiceCareAssistant:
             
             reminders = cursor.fetchall()
             
-            self.reminders_text.delete(1.0, tk.END)
-            
+            # Log reminders to console instead of GUI
             if not reminders:
-                self.reminders_text.insert(tk.END, "No reminders for today.\n\nPress SPEAK to add a reminder!")
+                print("No reminders for today.")
             else:
                 for i, (task, time, is_recurring, remaining_days) in enumerate(reminders, 1):
                     time_obj = datetime.datetime.strptime(time, '%H:%M').time()
                     formatted_time = time_obj.strftime('%I:%M %p')
-                    
-                    # Add recurring indicator
-                    recurring_text = ""
-                    if is_recurring and remaining_days > 0:
-                        recurring_text = f" (Repeats for {remaining_days} more days)"
-                    
-                    # Correct string formatting
-                    self.reminders_text.insert(tk.END, f"{i}. {task} at {formatted_time}{recurring_text}\n")
+                    recurring_text = " (Repeats for " + str(remaining_days) + " more days)" if is_recurring and remaining_days > 0 else ""
+                    print(f"{i}. {task} at {formatted_time}{recurring_text}")
         
         except Exception as e:
             print(f"Error updating display: {e}")
-            self.reminders_text.delete(1.0, tk.END)
-            self.reminders_text.insert(tk.END, "Error loading reminders.")
     
     def repeat_reminders(self):
         """Repeat today's reminders audibly"""
@@ -655,7 +521,6 @@ class VoiceCareAssistant:
                     
                     if not reminders:
                         self.speak("You have no reminders for today.")
-                        self.queue_gui_update(lambda: self.status_label.config(text="No reminders to repeat", fg='#f39c12'))
                     else:
                         self.speak(f"You have {len(reminders)} reminders today.")
                         time.sleep(1)  # Brief pause
@@ -666,33 +531,24 @@ class VoiceCareAssistant:
                             self.speak(f"Reminder {i}: {task} at {formatted_time}")
                             time.sleep(0.5)  # Brief pause between reminders
                         
-                        # Fix the duplicate and incomplete line
-                        self.queue_gui_update(lambda: self.status_label.config(text="Reminders repeated", fg='#27ae60'))
-                        
                 except Exception as e:
                     print(f"Error repeating reminders: {e}")
                     self.speak("Sorry, I couldn't repeat your reminders.")
-                    self.queue_gui_update(lambda: self.status_label.config(text="Error repeating reminders", fg='#e74c3c'))
-            
-            threading.Thread(target=repeat_thread, daemon=True).start()
-    
+
     def clear_all_reminders(self):
         """Clear all reminders after confirmation"""
         try:
             # Simple confirmation dialog
-            import tkinter.messagebox as msgbox
-            if msgbox.askyesno("Confirm", "Are you sure you want to clear all reminders?"):
-                cursor = self.conn.cursor()
-                cursor.execute('UPDATE reminders SET active = 0')
-                self.conn.commit()
-                
-                # Cancel all scheduled jobs
-                for job in self.scheduler.get_jobs():
-                    self.scheduler.remove_job(job.id)
-                
-                self.update_reminders_display()
-                self.status_label.config(text="All reminders cleared", fg='#e74c3c')
-                self.speak("All reminders have been cleared.")
+            cursor = self.conn.cursor()
+            cursor.execute('UPDATE reminders SET active = 0')
+            self.conn.commit()
+            
+            # Cancel all scheduled jobs
+            for job in self.scheduler.get_jobs():
+                self.scheduler.remove_job(job.id)
+            
+            self.update_reminders_display()
+            self.speak("All reminders have been cleared.")
                 
         except Exception as e:
             print(f"Error clearing reminders: {e}")
@@ -743,9 +599,7 @@ class VoiceCareAssistant:
     def run(self):
         """Start the main application"""
         try:
-            print("VoiceCare Assistant starting...")
-            self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-            self.root.mainloop()
+            print("VoiceCare Assistant backend initialized successfully")
         except KeyboardInterrupt:
             print("Application interrupted by user")
         except Exception as e:
@@ -769,8 +623,6 @@ class VoiceCareAssistant:
             
             # Quit pygame
             pygame.mixer.quit()
-            
-            self.root.destroy()
             
         except Exception as e:
             print(f"Error during cleanup: {e}")
