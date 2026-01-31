@@ -15,6 +15,7 @@
   - [ User Interface](#-user-interface)
     - [Main Components](#main-components)
     - [Reminder Management](#reminder-management)
+  - [Quick Start: Download Executable](#-quick-start-download-executable)
   - [ Installation & Setup](#-installation--setup)
     - [Prerequisites](#prerequisites)
     - [Step 1: Clone the Repository](#step-1-clone-the-repository)
@@ -113,6 +114,19 @@ VoiceCare supports three different speech recognition models to balance accuracy
 - **Recurring Indicators**: Displays "Repeats X more days" for recurring tasks
 - **Add Reminder Dialog**: Simple popup for manual reminder entry
 
+# Quick Start: Download Executable
+
+**No setup required!** Download pre-built executables from [GitHub Releases](https://github.com/MandarMawale-20/VoiceCare/releases):
+
+1. Go to [VoiceCare Releases](https://github.com/MandarMawale-20/VoiceCare/releases)
+2. Download one of the available executables:
+   - **VoiceCare** - Small, lightweight model (recommended for most users)
+   - **VoiceCareGoogle** - Google API version (requires internet, highest accuracy)
+3. Extract the folder and run the `.exe` file
+4. Done! Start using VoiceCare immediately
+
+---
+
 ##  Installation & Setup
 
 ### Prerequisites
@@ -122,7 +136,7 @@ VoiceCare supports three different speech recognition models to balance accuracy
 
 ### Step 1: Clone the Repository
 ```bash
-git clone <https://github.com/AvdhutRokade/VoiceCare>
+git clone <https://github.com/MandarMawale-20/VoiceCare>
 cd VoiceCare
 ```
 
@@ -161,6 +175,7 @@ These are typically included with the Vosk installation or can be found in the p
 ```bash
 python voiceCare_frontend.py
 ```
+
 
 ##  Project Structure
 

@@ -1,0 +1,81 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tempCodeRunnerFile.py
+*.tmp
+*.temp
+.pytest_cache/
+.coverage
+htmlcov/
+
+
+# Package files
+*.whl
+
+# Executable files directory
+exe files/
+*.tar.gz
+*.zip
+
+# Executable files (managed via GitHub Releases)
+exe files/*.exe
+# Distribution folders
+exe files/
+
+# Large model files
+vosk/vosk-model-*/
+vosk/**/*.mdl
+vosk/**/*.ie
+vosk/**/*.dubm
+
+# OS files
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.local
